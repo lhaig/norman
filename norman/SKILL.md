@@ -20,10 +20,10 @@ Norman uses **local files in `prds/`** to track all state and **subagents for ea
 - **Main agent** = Orchestrator (reads state, spawns subagents, updates files)
 - **Subagents** = Workers (execute one task each with fresh context)
 
-**Advisor model strategy:**
-- **Opus** = Advisor (reviews plans before execution, reviews completed work, diagnoses failures, makes architectural calls)
-- **Sonnet** = Worker (implements all tasks)
-- **Haiku** = Support (classify tasks, gather context, parse results, compress progress)
+**Advisor model strategy** (roles are fixed, models are configurable in config.md):
+- **Advisor** (`advisor_model`, default `opus`) = reviews plans before execution, reviews completed work, diagnoses failures, makes architectural calls. Set to `fable` on harnesses where Mythos-class models are available.
+- **Worker** (`default_model`, default `sonnet`) = implements all tasks
+- **Support** (`quick_model`, default `haiku`) = classify tasks, gather context, parse results, compress progress
 
 **Five modes:**
 1. **PRD** - Generate a requirements document in `prds/research/`
@@ -128,7 +128,8 @@ lint: gosec ./...
 default_subagent: general-purpose
 
 ## Model Strategy
-advisor_mode: always        # always | auto | never — controls Opus advisory review
+advisor_mode: always        # always | auto | never — controls advisory review
+advisor_model: opus         # or fable, where available
 default_model: sonnet
 quick_model: haiku
 progress_compress_after: 10
@@ -336,11 +337,23 @@ If only one task is ready across all phases, skip the question and start it dire
 
 If no tasks are ready: report completion or what's blocking.
 
+### Steps 3-6 via Workflow (default when available)
+
+When the Workflow tool is available, run Steps 3 through 6.2 for the chosen tasks as ONE Workflow script instead of hand-orchestrating Agent calls. Read `workflow.md` (same directory as this SKILL.md) for the args contract, output schemas, and reference script. This skill's instruction is the user's opt-in to workflow orchestration.
+
+Order of operations:
+1. Orchestrator first runs Step 3.5 (gather project rules) and Step 4 (mark ACTIVE, move PRDs, read acceptance criteria) for EVERY task in the batch.
+2. Launch the workflow with the batch. A batch is the ready tasks in the chosen phase with no dependencies between them — a batch of 1 is the normal sequential case. Set `isolate: true` for batches larger than 1 (workers get git worktrees).
+3. The workflow pipelines each task through classify -> advisor plan review -> implement (tests-first, evidence-gated) -> advisor code review with one fix round. Every agent output is JSON-schema validated — no text parsing. The workflow never touches `prds/`, never commits, never asks the user.
+4. The orchestrator processes the returned results per Step 6: commit DONE tasks (Step 6.3 — merging worktree diffs first when isolated, see workflow.md), advisor-guided recovery for FAILED, user questions for BLOCKED, mark twice-REJECTED tasks BLOCKED.
+
+The numbered steps below are the spec for what each pipeline stage must do, and double as the direct execution path when Workflow is unavailable.
+
 ### Step 3: Classify and Prepare (Haiku)
 
-Spawn a Haiku agent to classify each ready task. The spawn prompt MUST include the absolute path to the classification guide so Haiku reads it explicitly:
+Spawn a Haiku agent to classify each ready task. The classification guide is `subagents.md`, in the same directory as this SKILL.md — resolve its absolute path first, then include that path in the spawn prompt so Haiku reads it explicitly:
 
-> Read `/Users/stokvis/.claude/skills/norman/subagents.md` for the classification guide. Then verify the agent you choose exists by checking `ls ~/.claude/agents/` (or confirm it is a built-in: `general-purpose`, `Explore`, `Plan`). Do NOT return an agent name that is not present in either source.
+> Read `[absolute path to subagents.md]` for the classification guide. Then verify the agent you choose exists by checking `ls ~/.claude/agents/` (or confirm it is a built-in: `general-purpose`, `Explore`, `Plan`). Do NOT return an agent name that is not present in either source.
 
 Haiku should:
 1. Read the classification guide at the path above
@@ -351,9 +364,11 @@ Haiku should:
 
 Classify multiple ready tasks in parallel.
 
-### Step 3.1: Advisor Plan Review (Opus)
+### Step 3.1: Advisor Plan Review
 
-**When `advisor_mode` is `always`:** Spawn an Opus agent for every task.
+Advisor agents in this step (and Steps 6.2, FAILED recovery, and Mode 5) run on the model set by `advisor_model` in config.md.
+
+**When `advisor_mode` is `always`:** Spawn an advisor agent for every task.
 **When `advisor_mode` is `auto`:** Only spawn if Haiku classified the task as `COMPLEXITY: high` or `medium`.
 **When `advisor_mode` is `never`:** Skip this step entirely.
 
@@ -399,7 +414,7 @@ Use Agent tool with subagent type from Step 3 and model `sonnet`. The prompt MUS
 - **Required evidence in DONE report:** path(s) to the test file(s) added or modified, and the final test command output showing the relevant tests pass. Reports missing this evidence will be rejected (treated as FAILED).
 - Rules: do NOT commit, do NOT modify `prds/` files
 
-Spawn multiple independent workers in parallel if multiple tasks are ready.
+Spawn multiple independent workers in parallel if multiple tasks are ready. If parallel tasks could touch overlapping files, spawn each worker with `isolation: worktree` (each gets its own git worktree) or serialize them — otherwise concurrent edits clobber each other.
 
 ### Step 6: Process Result
 
@@ -407,20 +422,20 @@ Spawn multiple independent workers in parallel if multiple tasks are ready.
 
 Confirm the report includes a test file path and passing test output for the acceptance criteria. If missing (and the task is not `(spike)`-tagged), treat as FAILED and re-spawn with an explicit reminder of the tests-first directive. Do NOT proceed to advisor review or commit without tests.
 
-**Step 6.2: Advisor Code Review (Opus)**
+**Step 6.2: Advisor Code Review**
 
-**When `advisor_mode` is `always`:** Spawn an Opus code-reviewer agent for every completed task.
+**When `advisor_mode` is `always`:** Spawn an advisor code-reviewer agent for every completed task.
 **When `advisor_mode` is `auto`:** Only spawn if the task was classified as `COMPLEXITY: high` or `medium`.
 **When `advisor_mode` is `never`:** Skip to Step 6.3.
 
-The Opus reviewer receives: the task description, acceptance criteria, advisor's original APPROACH from Step 3.1, and the worker's reported file changes. It reads the changed files and returns:
+The reviewer receives: the task description, acceptance criteria, advisor's original APPROACH from Step 3.1, and the worker's reported file changes. It reads the changed files and returns:
 - **QUALITY:** `PASS`, `MINOR`, or `REJECT`
 - **ISSUES:** List of specific problems (if any), each with file path and description
 - **PATTERNS:** Any broadly useful patterns discovered
 
 `PASS` — Proceed to commit (Step 6.3).
 `MINOR` — Log issues in progress.md as improvement notes, proceed to commit. These are suggestions, not blockers.
-`REJECT` — Do NOT commit. Re-spawn the Sonnet worker with the reviewer's specific issues as fix instructions. After the second attempt, run the reviewer again. If rejected twice, mark BLOCKED and ask the user.
+`REJECT` — Do NOT commit. Send the reviewer's specific issues back to the SAME worker agent as fix instructions (continue it via SendMessage — it keeps the context it built while implementing). Re-spawn a fresh worker only if continuation isn't available on this harness. After the second attempt, run the reviewer again. If rejected twice, mark BLOCKED and ask the user.
 
 **Step 6.3: Commit**
 
@@ -436,13 +451,13 @@ The Opus reviewer receives: the task description, acceptance criteria, advisor's
 
 **FAILED — Advisor-Guided Recovery:**
 
-Instead of retrying the whole task on Opus, use Opus as a diagnostician:
-1. Spawn an Opus agent with the failure context (error messages, partial changes, worker's report)
-2. Opus returns: `DIAGNOSIS` (what went wrong), `FIX_GUIDANCE` (specific instructions for the worker to retry)
-3. Re-spawn Sonnet worker with the original task + Opus fix guidance
+Instead of retrying the whole task on the advisor model, use the advisor as a diagnostician:
+1. Spawn an advisor agent with the failure context (error messages, partial changes, worker's report)
+2. The advisor returns: `DIAGNOSIS` (what went wrong), `FIX_GUIDANCE` (specific instructions for the worker to retry)
+3. Continue the SAME worker agent (SendMessage) with the fix guidance — it already knows what it tried. Re-spawn fresh with the original task + fix guidance only if continuation isn't available.
 4. If the guided retry also fails, mark BLOCKED in TASKS.md, log both failures, ask user: retry/skip/stop
 
-**BLOCKED:** Present subagent's question to user, get answer, re-spawn with additional context.
+**BLOCKED:** Present subagent's question to user, get answer, continue the same agent (SendMessage) with the answer. Re-spawn with additional context only if continuation isn't available.
 
 ### Step 7: Continue
 
@@ -466,7 +481,7 @@ Start with: "norman verify"
 
 2. **Extract requirements (Haiku)** — Parse the PRD(s) into a structured checklist: user stories with acceptance criteria, functional requirements, non-functional requirements, explicit constraints. Skip non-goals.
 
-3. **Verify each requirement (Opus)** — Verification is inherently an advisory task. Spawn a code-reviewer agent on Opus. For each requirement: search codebase for implementation, read code, check acceptance criteria, run tests. Report each as PASS, FAIL, or PARTIAL with evidence.
+3. **Verify each requirement (advisor model)** — Verification is inherently an advisory task. Spawn a code-reviewer agent on the advisor model. For each requirement: search codebase for implementation, read code, check acceptance criteria, run tests. Report each as PASS, FAIL, or PARTIAL with evidence. On harnesses with the Workflow tool, run this step as a workflow pipeline — one verifier per requirement, with a JSON-schema-validated `{requirement, verdict, evidence}` result per agent instead of parsing free text.
 
 4. **Present results** — Show pass/partial/fail counts and details.
 
@@ -538,7 +553,7 @@ Check current state (incomplete tasks, uncommitted changes), then offer:
 - **Task partially complete** — Check git status, either commit partial progress or `git checkout .` and retry
 - **Wrong task executed** — Revert commit, update TASKS.md status back to TODO, move PRD back to previous folder, continue
 - **Subagent failed/timed out** — Check changes, commit or reset, mark BLOCKED in TASKS.md, continue or retry
-- **Context getting long** — After ~15-20 tasks, recommend fresh session. All state persists in files.
+- **Context getting long** — Modern harnesses auto-summarize long sessions, so norman can keep going; the session limits in config.md are mainly a cost and quality checkpoint now. All state persists in files, so a fresh session is always safe.
 - **TASKS.md out of sync** — If PRD files are in a different folder than TASKS.md links suggest, trust the file system and update TASKS.md links to match
 
 ---
@@ -549,9 +564,11 @@ Every task runs in a subagent for fresh context and isolation. The orchestrator 
 
 **Specialized agents:** The full list of agent types with classification guidance is in `subagents.md` (same directory as this file). The list must be kept in sync with the actual contents of `~/.claude/agents/` — Haiku is instructed to verify chosen agents exist before returning them.
 
-**Parallel execution:** If multiple tasks are ready with no dependency conflicts, classify and execute in parallel.
+**Parallel execution:** If multiple tasks are ready with no dependency conflicts, classify and execute in parallel. Use `isolation: worktree` when parallel workers might touch overlapping files.
 
-**Auto-escalation:** Sonnet failure -> auto-retry on Opus (if enabled). Opus failure -> mark BLOCKED in TASKS.md, ask user.
+**Workflow orchestration (default when available):** Mode 4 Steps 3-6 and Mode 5 verification run as Workflow scripts with JSON-schema agent outputs instead of the text protocols (`SUBAGENT:`, `DONE/FAILED`) — see `workflow.md` for the contract and reference script. This skill's instruction counts as the user's opt-in to workflow orchestration. Fall back to plain Agent calls when Workflow is unavailable. Orchestrator-only duties (TASKS.md updates, PRD moves, commits) always stay in the main loop.
+
+**Auto-escalation:** Worker failure -> advisor-guided diagnosis and retry (see Mode 4, FAILED). Second failure -> mark BLOCKED in TASKS.md, ask user.
 
 ---
 
