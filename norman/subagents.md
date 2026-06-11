@@ -3,7 +3,7 @@
 This file is read by the Haiku classifier during Step 3 of Mode 4 (Continue).
 The orchestrator does NOT need this in its main context.
 
-**Source of truth:** Available agents live in `~/.claude/agents/` (78 installed as of 2026-05-14). This file is a curated guide over that directory — if you add or remove an agent there, update the tables below. Haiku is instructed to verify the chosen `subagent_type` against the directory before returning a classification.
+**Source of truth:** Available agents live in `~/.claude/agents/` (the installed count drifts — regenerate the list with the command below rather than trusting any number written here). This file is a curated guide over that directory — if you add or remove an agent there, update the tables below. Haiku is instructed to verify the chosen `subagent_type` against the directory before returning a classification.
 
 To regenerate an authoritative list of installed agent names:
 ```
@@ -20,11 +20,11 @@ Norman uses a three-tier advisor model:
 
 | Role | Model | Purpose |
 |------|-------|---------|
-| **Advisor** | Opus | Reviews plans before execution, reviews completed code, diagnoses failures |
-| **Worker** | Sonnet | Implements all tasks (always sonnet, never opus) |
-| **Support** | Haiku | Classifies tasks, gathers context, compresses progress |
+| **Advisor** | `advisor_model` (opus default; fable where available) | Reviews plans before execution, reviews completed code, diagnoses failures |
+| **Worker** | `default_model` (sonnet) | Implements all tasks (never the advisor model) |
+| **Support** | `quick_model` (haiku) | Classifies tasks, gathers context, compresses progress |
 
-Workers are always Sonnet. The Opus advisor handles quality control through plan review (Step 3.1) and code review (Step 6.1). This separation means Opus spends tokens on reasoning about approach and quality rather than writing boilerplate.
+Workers stay on the worker model. The advisor handles quality control through plan review (Step 3.1) and code review (Step 6.2). This separation means the strongest model spends tokens on reasoning about approach and quality rather than writing boilerplate. Note: all agent files in `~/.claude/agents/` use `model: inherit` in their frontmatter, so norman's explicit model parameter on the Agent tool (or the session model, outside norman) determines what they run on.
 
 ---
 
@@ -59,6 +59,7 @@ Use when the task targets a specific framework or platform.
 | Frontend (React / responsive UI) | `frontend-developer` |
 | Godot 4 | `godot-developer` |
 | GraphQL APIs | `graphql-architect` |
+| htmx / Alpine.js frontends | `htmx-alpine-pro` |
 | iOS native | `ios-developer` |
 | Minecraft / Bukkit plugins | `minecraft-bukkit-pro` |
 | Mobile (React Native / cross-platform) | `mobile-developer` |
@@ -94,24 +95,19 @@ Use when the task domain matters more than the language.
 | Legacy refactoring / modernization | `legacy-modernizer` |
 | Payments / billing | `payment-integration` |
 | Performance / profiling | `performance-engineer` |
-| Prompt / agent engineering | `prompt-engineer` |
-| Search / RAG | `search-specialist` |
 | Security / auth | `security-auditor` |
 | Testing | `test-automator` |
 | UI / UX design | `ui-ux-designer` |
-| UI visual validation (screenshots) | `ui-visual-validator` |
 
 ### Data / AI Specialists
 
 | Domain | subagent_type |
 |--------|---------------|
 | AI feature engineering | `ai-engineer` |
-| Context management for long workflows | `context-manager` |
 | Data engineering / pipelines | `data-engineer` |
 | Data science / analytics | `data-scientist` |
 | ML model training | `ml-engineer` |
 | MLOps | `mlops-engineer` |
-| Quant analysis | `quant-analyst` |
 
 ### Documentation Specialists
 
@@ -128,14 +124,7 @@ Rare in Norman's project-execution flow, but available.
 
 | Domain | subagent_type |
 |--------|---------------|
-| Business analysis | `business-analyst` |
-| Content marketing | `content-marketer` |
-| Customer support | `customer-support` |
-| HR / people ops | `hr-pro` |
-| Legal review | `legal-advisor` |
-| Risk management | `risk-manager` |
-| Sales automation | `sales-automator` |
-| SEO content (auditor, writer, planner, etc.) | `seo-*` family |
+| Business analysis / metrics / reporting | `business-analyst` |
 
 ### General Purpose / Built-in
 
