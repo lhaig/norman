@@ -119,13 +119,6 @@ Use when the task domain matters more than the language.
 | Reference material | `reference-builder` |
 | Tutorials / guides | `tutorial-engineer` |
 
-### Non-Code Specialists
-Rare in Norman's project-execution flow, but available.
-
-| Domain | subagent_type |
-|--------|---------------|
-| Business analysis / metrics / reporting | `business-analyst` |
-
 ### General Purpose / Built-in
 
 | Use case | subagent_type |
