@@ -133,6 +133,7 @@ advisor_model: opus         # or fable, where available
 default_model: sonnet
 quick_model: haiku
 progress_compress_after: 10
+verify_rigor: single        # single | adversarial — Mode 5 verification depth
 ```
 
 ### progress.md
@@ -481,11 +482,18 @@ Start with: "norman verify"
 
 2. **Extract requirements (Haiku)** — Parse the PRD(s) into a structured checklist: user stories with acceptance criteria, functional requirements, non-functional requirements, explicit constraints. Skip non-goals.
 
-3. **Verify each requirement (advisor model)** — Verification is inherently an advisory task. Spawn a code-reviewer agent on the advisor model. For each requirement: search codebase for implementation, read code, check acceptance criteria, run tests. Report each as PASS, FAIL, or PARTIAL with evidence. On harnesses with the Workflow tool, run this step as a workflow pipeline — one verifier per requirement, with a JSON-schema-validated `{requirement, verdict, evidence}` result per agent instead of parsing free text.
+3. **Verify each requirement (advisor model)** — Verification is inherently an advisory task; verifiers run on `advisor_model`. Depth is controlled by `verify_rigor` in config.md (if the key is absent — e.g. a project set up before this option existed — treat it as `single`):
 
-4. **Present results** — Show pass/partial/fail counts and details.
+   - **`single` (default)** — One verifier per requirement. For each: search the codebase for the implementation, read the code, check acceptance criteria, run the relevant tests. Report `PASS`, `FAIL`, or `PARTIAL` with evidence.
+   - **`adversarial`** — Two to three verifiers per requirement, each with a distinct lens (implementation-exists / tests-actually-exercise-it / edge-cases-and-constraints). Combine by majority: `PASS` only if a majority vote PASS; `FAIL` if a majority vote FAIL; otherwise `PARTIAL`. This catches confident-but-wrong single verdicts on the requirements where a false PASS is most costly.
 
-5. **Handle gaps** — Offer via AskUserQuestion:
+   On harnesses with the Workflow tool, run this step as a workflow pipeline (one branch per requirement) with JSON-schema-validated verdicts instead of parsing free text — see `workflow.md`.
+
+4. **Completeness critic (adversarial only)** — After per-requirement verdicts, spawn one advisor-model critic over the full checklist and the DONE task list. It hunts for what a per-requirement sweep structurally cannot see: acceptance criteria that no test actually exercises, requirements with no corresponding implementation, anything claimed DONE without evidence. Fold each gap it returns into the results by downgrading the affected requirement to `PARTIAL` or `FAIL`. Skipped when `verify_rigor` is `single`.
+
+5. **Present results** — Show pass/partial/fail counts and details.
+
+6. **Handle gaps** — Offer via AskUserQuestion:
    - **Create tasks for gaps** — Add fix tasks to `prds/TASKS.md` as a new phase, create PRDs in `prds/backlog/`, continue norman
    - **Accept as-is** — Log results, update TASKS.md notes
    - **Re-verify specific items** — Re-check individual requirements after manual fixes

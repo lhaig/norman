@@ -226,4 +226,105 @@ Process results in task order, applying SKILL.md Mode 4 Step 6:
 
 ## Mode 5 (Verify) as a workflow
 
-Same contract: orchestrator extracts the requirement checklist first, then one pipeline — each requirement goes to a verifier agent on `advisorModel` with schema `{ requirement, verdict: PASS|FAIL|PARTIAL, evidence }`. The orchestrator writes `prds/verification.md` from the returned array.
+Same contract: the orchestrator extracts the requirement checklist first, passes it via `args`, and writes `prds/verification.md` from the returned array. Verify `args` add:
+
+```json
+{
+  "advisorModel": "opus",
+  "verifyRigor": "single",
+  "doneTasks": "one-line summary per DONE task, for the completeness critic",
+  "requirements": [
+    { "id": "US-001", "text": "...", "criteria": "acceptance criteria from the PRD" }
+  ]
+}
+```
+
+Both rigor modes share the per-requirement verdict schema:
+
+```js
+const VERDICT = {
+  type: 'object',
+  required: ['requirement', 'verdict', 'evidence'],
+  properties: {
+    requirement: { type: 'string' },
+    verdict: { enum: ['PASS', 'FAIL', 'PARTIAL'] },
+    evidence: { type: 'string' },
+  },
+}
+
+const verifyPrompt = (req, lens) => `You are a norman verifier. ${lens || 'Check whether this requirement is met: find the implementation, read it, confirm a test exercises the acceptance criteria, run it.'}
+
+REQUIREMENT ${req.id}: ${req.text}
+ACCEPTANCE CRITERIA:
+${req.criteria}
+
+Return PASS, FAIL, or PARTIAL with the specific evidence (files, test names, output) you found.`
+```
+
+**`single`** — one branch per requirement, one verifier each:
+
+```js
+const results = await parallel(args.requirements.map((req) => () =>
+  agent(verifyPrompt(req), { model: args.advisorModel, phase: 'Verify', label: `verify:${req.id}`, schema: VERDICT })
+))
+return { judged: results.filter(Boolean), critique: null }
+```
+
+**`adversarial`** — 2-3 lens verifiers per requirement, majority-combined, then a completeness critic over the whole set. This is a deliberate barrier (`parallel`, not `pipeline`): the critic must see every verdict at once.
+
+```js
+const LENSES = [
+  { key: 'exists',    ask: 'Does the implementation for this requirement actually exist in the codebase? Read the code — do not assume.' },
+  { key: 'tested',    ask: 'Is there a test that actually exercises THIS requirement (not just adjacent code)? Read the test and confirm it asserts the criteria.' },
+  { key: 'edgecases', ask: 'Do the stated edge cases and constraints hold? Try to find an input the implementation mishandles.' },
+]
+
+const CRITIQUE = {
+  type: 'object',
+  required: ['gaps'],
+  properties: {
+    gaps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['requirement', 'downgradeTo', 'reason'],
+        properties: {
+          requirement: { type: 'string' },
+          downgradeTo: { enum: ['PARTIAL', 'FAIL'] },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const combine = (votes) => {
+  const v = votes.filter(Boolean)
+  const pass = v.filter((x) => x.verdict === 'PASS').length
+  const fail = v.filter((x) => x.verdict === 'FAIL').length
+  if (fail > pass) return 'FAIL'
+  if (pass > v.length / 2) return 'PASS'
+  return 'PARTIAL'
+}
+
+// Barrier: every requirement fully judged before the critic runs.
+const judged = await parallel(args.requirements.map((req) => async () => {
+  const votes = await parallel(LENSES.map((lens) => () =>
+    agent(verifyPrompt(req, lens.ask),
+      { model: args.advisorModel, phase: 'Verify', label: `verify:${req.id}:${lens.key}`, schema: VERDICT })))
+  return {
+    requirement: req.text,
+    id: req.id,
+    verdict: combine(votes),
+    evidence: votes.filter(Boolean).map((x) => `[${x.verdict}] ${x.evidence}`).join('\n'),
+  }
+}))
+
+const critique = await agent(
+  `You are the norman completeness critic. Per-requirement verdicts so far:\n${JSON.stringify(judged, null, 2)}\n\nDONE TASKS:\n${args.doneTasks}\n\nFind what the per-requirement sweep structurally cannot: acceptance criteria that no test actually exercises, requirements with no implementation, anything claimed DONE without evidence. Return only genuine gaps, each as the requirement to downgrade to PARTIAL or FAIL with the reason.`,
+  { model: args.advisorModel, phase: 'Verify', label: 'completeness-critic', schema: CRITIQUE })
+
+return { judged, critique }
+```
+
+**After the workflow returns:** if `critique` is non-null, apply each gap by downgrading the matching `judged` entry's verdict (never upgrade). Then write `prds/verification.md` from the reconciled array and follow SKILL.md Mode 5 steps 5-6 (present, handle gaps). A `null` vote in a lens set (agent skipped or died) is simply dropped by `combine` — a requirement whose lenses all dropped is left `PARTIAL`.
