@@ -21,7 +21,7 @@ Norman uses **local files in `prds/`** to track all state and **subagents for ea
 - **Subagents** = Workers (execute one task each with fresh context)
 
 **Advisor model strategy** (roles are fixed, models are configurable in config.md):
-- **Advisor** (`advisor_model`, default `opus`) = reviews plans before execution, reviews completed work, diagnoses failures, makes architectural calls. Set to `fable` on harnesses where Mythos-class models are available.
+- **Advisor** (`advisor_model`, default `opus`) = reviews plans before execution, reviews completed work, diagnoses failures, makes architectural calls.
 - **Worker** (`default_model`, default `sonnet`) = implements all tasks
 - **Support** (`quick_model`, default `haiku`) = classify tasks, gather context, parse results, compress progress
 
@@ -129,7 +129,7 @@ default_subagent: general-purpose
 
 ## Model Strategy
 advisor_mode: always        # always | auto | never — controls advisory review
-advisor_model: opus         # or fable, where available
+advisor_model: opus
 default_model: sonnet
 quick_model: haiku
 progress_compress_after: 10
@@ -367,6 +367,18 @@ Haiku should:
 
 Classify multiple ready tasks in parallel.
 
+**Classification is advisory, never load-bearing.** It runs on the smallest model
+(`quick_model`), so treat its output as a suggestion to be checked, not a decision to be
+obeyed. The self-verification asked for above is necessary but NOT sufficient: validate the
+returned `subagent_type` against the agents actually available before spawning anything, and
+if the classification is missing, malformed, or names an agent that does not exist, fall
+back to `general-purpose` and CONTINUE.
+
+Never let a classification failure end the task. Doing so skips the implement stage and the
+advisor review, and a worker that already began still leaves its work on disk -- unreviewed,
+and looking finished. A slightly less specialised worker whose output gets reviewed beats a
+perfect choice that never runs.
+
 ### Step 3.1: Advisor Plan Review
 
 Advisor agents in this step (and Steps 6.2, FAILED recovery, and Mode 5) run on the model set by `advisor_model` in config.md.
@@ -585,7 +597,7 @@ Project-specific keys (`name`, `repo`, `created` under Project; `build`, `test`,
 | Session Limits | `warn_at_tasks` | `12` | positive integer `< max_tasks_per_session` |
 | Subagent Defaults | `default_subagent` | `general-purpose` | any installed agent type |
 | Model Strategy | `advisor_mode` | `always` | `always` \| `auto` \| `never` |
-| Model Strategy | `advisor_model` | `opus` | `opus` \| `fable` \| any valid model |
+| Model Strategy | `advisor_model` | `opus` | `opus` \| any valid model |
 | Model Strategy | `default_model` | `sonnet` | any valid model |
 | Model Strategy | `quick_model` | `haiku` | any valid model |
 | Model Strategy | `progress_compress_after` | `10` | positive integer |

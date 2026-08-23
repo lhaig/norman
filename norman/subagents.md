@@ -20,7 +20,7 @@ Norman uses a three-tier advisor model:
 
 | Role | Model | Purpose |
 |------|-------|---------|
-| **Advisor** | `advisor_model` (opus default; fable where available) | Reviews plans before execution, reviews completed code, diagnoses failures |
+| **Advisor** | `advisor_model` (opus default) | Reviews plans before execution, reviews completed code, diagnoses failures |
 | **Worker** | `default_model` (sonnet) | Implements all tasks (never the advisor model) |
 | **Support** | `quick_model` (haiku) | Classifies tasks, gathers context, compresses progress |
 

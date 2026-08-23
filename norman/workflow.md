@@ -16,6 +16,7 @@ The orchestrator prepares everything BEFORE launching the workflow, passes it vi
   "workerModel": "sonnet",
   "quickModel": "haiku",
   "isolate": false,
+  "knownSubagents": ["golang-pro", "general-purpose", "..."],
   "projectRules": "extracted CLAUDE.md rules (Step 3.5)",
   "patterns": "relevant PATTERN lines from progress.md",
   "commands": { "build": "...", "test": "...", "lint": "..." },
@@ -28,6 +29,10 @@ The orchestrator prepares everything BEFORE launching the workflow, passes it vi
 **Always normalise `args` at the top of the script.** Depending on the harness it arrives either as an object or as a JSON-encoded string; the scripts below open with `const A = typeof args === 'string' ? JSON.parse(args) : args` and then use `A` throughout. Skipping this is a hard failure at the first `pipeline()`/`parallel()` call — `A.tasks` is `undefined`, so the workflow dies before any agent runs.
 
 Set `isolate: true` whenever `tasks.length > 1` — workers then run in git worktrees so parallel edits cannot collide. A batch of 1 runs directly in the working tree.
+
+`knownSubagents` is the list of agent types actually available in this session (the orchestrator has it; the Agent tool description enumerates them). The script validates the classifier's choice against it and falls back to `general-purpose` on a miss. **Pass it.** Omitting it skips validation, which is how a nonexistent agent type reached `agentType` and killed a run. Classification runs on the smallest model and is the one stage that fails in practice — so its output is checked in code rather than trusted, and a failure there now costs a slightly less specialised worker instead of the whole task.
+
+If the right specialist is obvious for the repo (in a single-language codebase it usually is, and the classifier will return the same one every time), consider skipping the stage entirely: pass the agent type in `args` and drop stage 1. That removes the failure mode rather than absorbing it, and saves an agent per task.
 
 ## Reference script
 
@@ -108,6 +113,31 @@ const REVIEW = {
 const needsAdvisor = (complexity) =>
   A.advisorMode === 'always' || (A.advisorMode === 'auto' && complexity !== 'low')
 
+// Classification runs on the SMALLEST model (quick_model, default haiku) and is
+// the cheapest decision in the pipeline -- but everything downstream used to hang
+// on it unconditionally: which specialist runs, and whether the task runs at all.
+// That is an inverted risk profile, and in practice this is the only stage that
+// ever fails (a returned agent name that does not exist; a subagent that finishes
+// without emitting the schema). Both are now absorbed here rather than ending the
+// task.
+//
+// Step 3 of SKILL.md asks the classifier to verify its own choice against
+// `ls ~/.claude/agents/`. That instruction stays, but it is no longer TRUSTED:
+// asking the weakest model to self-certify and then using the answer unchecked is
+// what let a nonexistent agent type through. Validate deterministically instead --
+// it costs nothing and cannot fail.
+const FALLBACK_SUBAGENT = 'general-purpose'
+
+const safeClassification = (cls, task) => {
+  if (!cls || !cls.subagent) {
+    log(`task ${task.id}: no usable classification, falling back to ${FALLBACK_SUBAGENT}`)
+    return { subagent: FALLBACK_SUBAGENT, files: [], context: '', complexity: 'high' }
+  }
+  if (!A.knownSubagents || A.knownSubagents.includes(cls.subagent)) return cls
+  log(`task ${task.id}: classifier returned unknown agent "${cls.subagent}", falling back to ${FALLBACK_SUBAGENT}`)
+  return { ...cls, subagent: FALLBACK_SUBAGENT }
+}
+
 const workerPrompt = (task, cls, plan, extra) => `
 You are implementing one task for the norman orchestrator. Your final output is parsed as structured data, not shown to a human.
 
@@ -139,11 +169,26 @@ ${extra || ''}`
 const results = await pipeline(
   A.tasks,
 
-  // Stage 1: classify (Step 3)
-  (task) => agent(
-    `Read ${A.subagentsGuidePath} for the classification guide. Search the codebase for files relevant to this task (read at most 5), verify the chosen subagent exists per the guide, and return the classification.\n\nTASK ${task.id}: ${task.description}\n\nACCEPTANCE CRITERIA:\n${task.acceptanceCriteria}`,
-    { model: A.quickModel, phase: 'Classify', label: `classify:${task.id}`, schema: CLASSIFY }
-  ),
+  // Stage 1: classify (Step 3). NON-FATAL: a classification failure must not cost
+  // the task its implement stage and -- more importantly -- its advisor review.
+  // Dropping the item here is the worst outcome available, because a worker that
+  // already did the work still leaves it on disk, unreviewed and looking finished.
+  //
+  // The acceptance criteria are deliberately NOT sent: picking an agent needs the
+  // shape of the task, not its test plan, and a long implementer brief invites the
+  // classifier to start implementing instead of classifying.
+  async (task) => {
+    let cls = null
+    try {
+      cls = await agent(
+        `Read ${A.subagentsGuidePath} for the classification guide. Search the codebase for files relevant to this task (read at most 5), verify the chosen subagent exists per the guide, and return the classification.\n\nTASK ${task.id}: ${task.description}`,
+        { model: A.quickModel, phase: 'Classify', label: `classify:${task.id}`, schema: CLASSIFY }
+      )
+    } catch (e) {
+      log(`task ${task.id}: classify stage errored (${e && e.message ? e.message : e})`)
+    }
+    return safeClassification(cls, task)
+  },
 
   // Stage 2: advisor plan review (Step 3.1)
   async (cls, task) => {
