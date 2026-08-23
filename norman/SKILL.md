@@ -451,6 +451,7 @@ The reviewer receives: the task description, acceptance criteria, advisor's orig
 4. Append to `prds/progress.md` (date, task, changes, patterns, advisor review result)
 5. Commit with `feat([scope]): [description]` (include the archive update in the same commit if a phase was collapsed)
 6. If subagent or advisor reported broadly useful patterns, offer to promote to CLAUDE.md
+7. **If a phase was collapsed in step 3**, mention the `sweep` skill once: `sweep invariants` mutation-tests whether the suite actually guards what the phase promised, and `sweep comments` strips the now-stale `Phase N`/`FR-n`/`T-n.n` references the phase left in the code. Offer, do not run — both are slow and are the user's call.
 
 **FAILED — Advisor-Guided Recovery:**
 

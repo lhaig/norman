@@ -25,6 +25,8 @@ The orchestrator prepares everything BEFORE launching the workflow, passes it vi
 }
 ```
 
+**Always normalise `args` at the top of the script.** Depending on the harness it arrives either as an object or as a JSON-encoded string; the scripts below open with `const A = typeof args === 'string' ? JSON.parse(args) : args` and then use `A` throughout. Skipping this is a hard failure at the first `pipeline()`/`parallel()` call — `A.tasks` is `undefined`, so the workflow dies before any agent runs.
+
 Set `isolate: true` whenever `tasks.length > 1` — workers then run in git worktrees so parallel edits cannot collide. A batch of 1 runs directly in the working tree.
 
 ## Reference script
@@ -42,6 +44,12 @@ export const meta = {
     { title: 'Review', detail: 'advisor code review + one fix round' },
   ],
 }
+
+// REQUIRED: `args` arrives as a JSON-encoded STRING on some harnesses, as an
+// object on others. Normalise once, then use `A` everywhere instead of `args`.
+// Without this, `args.tasks` is undefined and pipeline() throws
+// "expects an array as the first argument" before a single agent runs.
+const A = typeof args === 'string' ? JSON.parse(args) : args
 
 const CLASSIFY = {
   type: 'object',
@@ -98,13 +106,13 @@ const REVIEW = {
 }
 
 const needsAdvisor = (complexity) =>
-  args.advisorMode === 'always' || (args.advisorMode === 'auto' && complexity !== 'low')
+  A.advisorMode === 'always' || (A.advisorMode === 'auto' && complexity !== 'low')
 
 const workerPrompt = (task, cls, plan, extra) => `
 You are implementing one task for the norman orchestrator. Your final output is parsed as structured data, not shown to a human.
 
 PROJECT RULES (non-negotiable):
-${args.projectRules}
+${A.projectRules}
 
 TASK ${task.id}: ${task.description}
 
@@ -117,9 +125,9 @@ RELEVANT FILES: ${cls.files.join(', ')}
 CONTEXT: ${cls.context}
 
 PATTERNS FROM EARLIER TASKS:
-${args.patterns}
+${A.patterns}
 
-COMMANDS: build: ${args.commands.build} | test: ${args.commands.test} | lint: ${args.commands.lint}
+COMMANDS: build: ${A.commands.build} | test: ${A.commands.test} | lint: ${A.commands.lint}
 
 ${task.spike
   ? 'This is a (spike) task: prototype first, tests come in a follow-up task.'
@@ -129,12 +137,12 @@ Do NOT commit. Do NOT modify anything under prds/. Report workdir as the absolut
 ${extra || ''}`
 
 const results = await pipeline(
-  args.tasks,
+  A.tasks,
 
   // Stage 1: classify (Step 3)
   (task) => agent(
-    `Read ${args.subagentsGuidePath} for the classification guide. Search the codebase for files relevant to this task (read at most 5), verify the chosen subagent exists per the guide, and return the classification.\n\nTASK ${task.id}: ${task.description}\n\nACCEPTANCE CRITERIA:\n${task.acceptanceCriteria}`,
-    { model: args.quickModel, phase: 'Classify', label: `classify:${task.id}`, schema: CLASSIFY }
+    `Read ${A.subagentsGuidePath} for the classification guide. Search the codebase for files relevant to this task (read at most 5), verify the chosen subagent exists per the guide, and return the classification.\n\nTASK ${task.id}: ${task.description}\n\nACCEPTANCE CRITERIA:\n${task.acceptanceCriteria}`,
+    { model: A.quickModel, phase: 'Classify', label: `classify:${task.id}`, schema: CLASSIFY }
   ),
 
   // Stage 2: advisor plan review (Step 3.1)
@@ -144,7 +152,7 @@ const results = await pipeline(
     if (needsAdvisor(cls.complexity)) {
       plan = await agent(
         `You are the norman advisor reviewing a task plan before a worker implements it.\n\nTASK ${task.id}: ${task.description}\n\nACCEPTANCE CRITERIA:\n${task.acceptanceCriteria}\n\nCLASSIFIED FILES: ${cls.files.join(', ')}\nCONTEXT: ${cls.context}\n\nRead the relevant files. Return your recommended approach, risks the worker must watch (breaking changes, concurrency, security), and verdict PROCEED — or REVISE plus the revision the task definition needs.`,
-        { model: args.advisorModel, phase: 'Advise', label: `advise:${task.id}`, schema: PLAN }
+        { model: A.advisorModel, phase: 'Advise', label: `advise:${task.id}`, schema: PLAN }
       )
     }
     return { cls, plan }
@@ -154,14 +162,14 @@ const results = await pipeline(
   async (prev, task) => {
     if (!prev) return null
     const { cls, plan } = prev
-    const opts = { agentType: cls.subagent, model: args.workerModel, phase: 'Implement', label: `work:${task.id}`, schema: WORK }
-    if (args.isolate) opts.isolation = 'worktree'
+    const opts = { agentType: cls.subagent, model: A.workerModel, phase: 'Implement', label: `work:${task.id}`, schema: WORK }
+    if (A.isolate) opts.isolation = 'worktree'
     let report = await agent(workerPrompt(task, cls, plan), opts)
     const noEvidence = (r) => r && r.status === 'DONE' && !task.spike && !(r.testFiles && r.testFiles.length)
     if (noEvidence(report)) {
       log(`task ${task.id}: DONE without test evidence — one retry with tests-first reminder`)
       report = await agent(workerPrompt(task, cls, plan,
-        `A previous attempt${args.isolate ? ` (in ${report.workdir} — cd there and continue on that copy)` : ''} reported DONE without test evidence and was rejected. Tests are mandatory: add the missing tests for the acceptance criteria, make them pass, include testFiles and testOutput.`),
+        `A previous attempt${A.isolate ? ` (in ${report.workdir} — cd there and continue on that copy)` : ''} reported DONE without test evidence and was rejected. Tests are mandatory: add the missing tests for the acceptance criteria, make them pass, include testFiles and testOutput.`),
         { ...opts, isolation: undefined, label: `work-retry:${task.id}` })
       if (noEvidence(report)) {
         report = { ...report, status: 'FAILED', summary: 'Rejected twice: no test evidence. ' + report.summary }
@@ -182,15 +190,15 @@ const results = await pipeline(
     const reviewPrompt = (rep) =>
       `You are the norman advisor reviewing completed work.\n\nTASK ${task.id}: ${task.description}\n\nACCEPTANCE CRITERIA:\n${task.acceptanceCriteria}\n\n${plan ? 'ORIGINAL APPROVED APPROACH:\n' + plan.approach + '\n\n' : ''}WORKER REPORT: ${rep.summary}\nFILES CHANGED: ${rep.filesChanged.join(', ')}\nWORKING DIRECTORY: ${rep.workdir}\n\nRead the changed files in that directory and judge the work: PASS, MINOR (log-worthy issues, not blockers), or REJECT (must be fixed before commit), with specific issues.`
     let review = await agent(reviewPrompt(report),
-      { model: args.advisorModel, phase: 'Review', label: `review:${task.id}`, schema: REVIEW })
+      { model: A.advisorModel, phase: 'Review', label: `review:${task.id}`, schema: REVIEW })
 
     if (review && review.quality === 'REJECT') {
       log(`task ${task.id}: review REJECT — running fix round`)
       report = await agent(workerPrompt(task, cls, plan,
-        `A previous worker already implemented this task${args.isolate ? ` in ${report.workdir} — cd there and work on that copy` : ''}. Their summary: ${report.summary}\nThe advisor REJECTED the work with these issues — fix exactly these:\n${review.issues.map(i => `- ${i.file}: ${i.description}`).join('\n')}`),
-        { agentType: cls.subagent, model: args.workerModel, phase: 'Review', label: `fix:${task.id}`, schema: WORK })
+        `A previous worker already implemented this task${A.isolate ? ` in ${report.workdir} — cd there and work on that copy` : ''}. Their summary: ${report.summary}\nThe advisor REJECTED the work with these issues — fix exactly these:\n${review.issues.map(i => `- ${i.file}: ${i.description}`).join('\n')}`),
+        { agentType: cls.subagent, model: A.workerModel, phase: 'Review', label: `fix:${task.id}`, schema: WORK })
       review = report && report.status === 'DONE'
-        ? await agent(reviewPrompt(report), { model: args.advisorModel, phase: 'Review', label: `re-review:${task.id}`, schema: REVIEW })
+        ? await agent(reviewPrompt(report), { model: A.advisorModel, phase: 'Review', label: `re-review:${task.id}`, schema: REVIEW })
         : review
       if (!report || report.status !== 'DONE' || (review && review.quality === 'REJECT')) {
         return { task, cls, plan, report, review, final: 'REJECTED' }
@@ -264,8 +272,10 @@ Return PASS, FAIL, or PARTIAL with the specific evidence (files, test names, out
 **`single`** — one branch per requirement, one verifier each:
 
 ```js
-const results = await parallel(args.requirements.map((req) => () =>
-  agent(verifyPrompt(req), { model: args.advisorModel, phase: 'Verify', label: `verify:${req.id}`, schema: VERDICT })
+const A = typeof args === 'string' ? JSON.parse(args) : args   // see note above
+
+const results = await parallel(A.requirements.map((req) => () =>
+  agent(verifyPrompt(req), { model: A.advisorModel, phase: 'Verify', label: `verify:${req.id}`, schema: VERDICT })
 ))
 return { judged: results.filter(Boolean), critique: null }
 ```
@@ -273,6 +283,8 @@ return { judged: results.filter(Boolean), critique: null }
 **`adversarial`** — 2-3 lens verifiers per requirement, majority-combined, then a completeness critic over the whole set. This is a deliberate barrier (`parallel`, not `pipeline`): the critic must see every verdict at once.
 
 ```js
+const A = typeof args === 'string' ? JSON.parse(args) : args   // see note above
+
 const LENSES = [
   { key: 'exists',    ask: 'Does the implementation for this requirement actually exist in the codebase? Read the code — do not assume.' },
   { key: 'tested',    ask: 'Is there a test that actually exercises THIS requirement (not just adjacent code)? Read the test and confirm it asserts the criteria.' },
@@ -308,10 +320,10 @@ const combine = (votes) => {
 }
 
 // Barrier: every requirement fully judged before the critic runs.
-const judged = await parallel(args.requirements.map((req) => async () => {
+const judged = await parallel(A.requirements.map((req) => async () => {
   const votes = await parallel(LENSES.map((lens) => () =>
     agent(verifyPrompt(req, lens.ask),
-      { model: args.advisorModel, phase: 'Verify', label: `verify:${req.id}:${lens.key}`, schema: VERDICT })))
+      { model: A.advisorModel, phase: 'Verify', label: `verify:${req.id}:${lens.key}`, schema: VERDICT })))
   return {
     requirement: req.text,
     id: req.id,
@@ -321,8 +333,8 @@ const judged = await parallel(args.requirements.map((req) => async () => {
 }))
 
 const critique = await agent(
-  `You are the norman completeness critic. Per-requirement verdicts so far:\n${JSON.stringify(judged, null, 2)}\n\nDONE TASKS:\n${args.doneTasks}\n\nFind what the per-requirement sweep structurally cannot: acceptance criteria that no test actually exercises, requirements with no implementation, anything claimed DONE without evidence. Return only genuine gaps, each as the requirement to downgrade to PARTIAL or FAIL with the reason.`,
-  { model: args.advisorModel, phase: 'Verify', label: 'completeness-critic', schema: CRITIQUE })
+  `You are the norman completeness critic. Per-requirement verdicts so far:\n${JSON.stringify(judged, null, 2)}\n\nDONE TASKS:\n${A.doneTasks}\n\nFind what the per-requirement sweep structurally cannot: acceptance criteria that no test actually exercises, requirements with no implementation, anything claimed DONE without evidence. Return only genuine gaps, each as the requirement to downgrade to PARTIAL or FAIL with the reason.`,
+  { model: A.advisorModel, phase: 'Verify', label: 'completeness-critic', schema: CRITIQUE })
 
 return { judged, critique }
 ```
