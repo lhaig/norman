@@ -6,6 +6,7 @@ BACKUP      := $(CLAUDE_HOME)/.repo-sync-backup-$(shell date +%Y%m%d-%H%M%S)
 LINKS := \
 	$(SKILLS)/norman:$(REPO)/norman \
 	$(SKILLS)/prd:$(REPO)/prd \
+	$(SKILLS)/sweep:$(REPO)/sweep \
 	$(CLAUDE_HOME)/agents:$(REPO)/agents \
 	$(CLAUDE_HOME)/statusline.sh:$(REPO)/statusline/statusline.sh
 
