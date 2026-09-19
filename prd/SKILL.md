@@ -14,4 +14,4 @@ When triggered, execute Mode 1 (PRD) from the norman skill. The behavior is iden
 3. Save to `prds/research/prd-[feature-name].md`
 4. Tell the user to run `norman import` when ready to extract tasks
 
-Refer to the norman skill (`~/.claude/skills/norman/SKILL.md`) Mode 1 for the full specification.
+Refer to the norman skill's Mode 1 reference (`references/prd.md` in the norman skill directory — `~/.claude/skills/norman/` on Claude Code, `~/.agents/skills/norman/` on Codex) for the full specification.

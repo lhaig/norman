@@ -5,8 +5,8 @@ description: "Post-implementation cleanup. Two modes: prove tests actually guard
 
 # Sweep - Post-Implementation Cleanup
 
-Two cleanups that are worth doing after a phase or feature closes, when the code is
-correct but the scaffolding around it has gone stale.
+Two cleanups worth doing after a phase or feature closes, when the code is correct but
+the scaffolding around it has gone stale.
 
 | Mode | Question it answers |
 |------|--------------------|
@@ -94,14 +94,14 @@ These come from watching each one go wrong:
    agent told to assume it is wrong. Most get refuted — usually because the break pointed
    the wrong way, or a suite behind a build tag does catch it.
 
-7. **A stray test binary outlives the agent that started it.** Killing a wrapper does not
-   kill its child. Check for leftover test processes before blaming a diff for a timeout.
+7. **A stray test binary outlives the agent that started it.** Check for leftover test
+   processes before blaming a diff for a timeout.
 
 ### Output
 
 Findings are gaps in *coverage*, not bugs. Report each as: the guarantee, the edit that
-broke it undetected, what it would cost in production. Then ask which are worth a test —
-that is a priority call, not yours to make.
+broke it undetected, the production cost. Then ask which are worth a test — that is a
+priority call, not yours to make.
 
 ---
 
@@ -115,10 +115,8 @@ per-file procedure.
 
 ### What this is not
 
-It is not a campaign against long comments. A comment that takes 20 lines to explain a
-subtle bug fix is doing its job. Overall comment-to-code ratio is not a target — measure
-it, and if it is unremarkable, say so and go after the specific offenders instead of
-trimming everywhere.
+Not a campaign against long comments: a 20-line explanation of a subtle bug fix is doing
+its job. Comment-to-code ratio is measured, not targeted — go after specific offenders.
 
 ### The hard rule, first
 
@@ -130,53 +128,26 @@ Reformat one and the build changes silently. Dropping a `//go:build integration`
 removes a whole suite from CI while every local run stays green. **Never touch a directive
 comment — not to reflow it, not to fix its spacing.** Enumerate them before starting.
 
-### Remove
+### The taxonomy, in one breath
 
-- Task, phase, sprint, story and requirement numbers: `Phase 9`, `T-4.1`, `FR-8`,
-  `US-RECV-2`, `Step 2`, and pointers to archived sprint docs. Keep the *fact*, drop the
-  citation: `the data model for FR-8 (domain ownership)` becomes `the data model for
-  domain ownership`.
-- Comments that restate the code.
-- Changelog narration — "previously we did X, then in phase 3 we switched" — unless the
-  history is the rationale, in which case keep the rationale and drop the chronology.
-- The same point made three times in one block.
-- `Decision:` / `Rationale:` headers on a block that makes a single point.
+Full lists with examples are in `comments.md` Step 2. The shape:
 
-### Never remove
-
-- **Why, not what.** Rationale, trade-offs, alternatives that were rejected and why.
-- **Hazards and contracts.** "Not safe to repeat", "must run before X", locking and
-  ordering rules, anything about concurrency.
-- **Bug-fix provenance.** "This exists because <failure mode>" is the most expensive kind
-  of comment to lose — it is the one that stops someone reverting the fix.
-- **Spec citations.** RFC and standard numbers stay. They are external and permanent,
-  unlike an internal FR- number. This distinction is the whole point: `FR-6/RFC 2045
-  section 6.4 forbids ...` loses `FR-6` and keeps `RFC 2045 section 6.4`.
-- **Security reasoning**, and any note about what an attacker could otherwise do.
-- Directive comments (above), and `TODO`/`FIXME` that name an owner or condition.
-
-### Compress
-
-Target blocks over ~10 lines. Rewrite to: one sentence of what it is, then the
-load-bearing "why"s as tight prose. Every distinct claim survives; the repetition does not.
-If you cannot compress it without losing a claim, leave it — that comment has earned its
-length.
-
-Keep language doc conventions: a Go doc comment still starts with the identifier name.
+- **Remove** — task/phase/sprint/requirement numbers (`Phase 9`, `T-4.1`, `FR-8`), keeping
+  the fact and dropping the citation; comments that restate the code; changelog narration;
+  the same point made three times; `Decision:`/`Rationale:` headers on a single point.
+- **Never remove** — why-not-what rationale; hazards and contracts (ordering, locking,
+  concurrency); bug-fix provenance ("this exists because <failure>"); external spec
+  citations (RFC numbers stay, FR- numbers go); security reasoning; directive comments;
+  `TODO`/`FIXME` with an owner or condition.
+- **Compress** — blocks over ~10 lines: one sentence of what, then the load-bearing whys.
+  Every distinct claim survives. If it cannot shrink without losing a claim, leave it.
+  Keep language doc conventions (a Go doc comment still starts with the identifier).
 
 ### Verify, every time
 
-Comments cannot change behaviour — except when they can (see the hard rule). So:
-
-```
-gofmt -l .        # must be empty
-go build ./...
-go vet ./...      # compiles test files too
-go test ./...     # the suite must be as green as it was before you started
-```
-
-Confirm the suite was green *before* the sweep, or you will inherit someone else's failure
-and think you caused it.
+`gofmt -l .` empty, `go build ./...`, `go vet ./...`, `go test ./...` as green as before you
+started — confirm that baseline first, or you inherit someone else's failure. See
+`comments.md` Step 4.
 
 ### Applying
 

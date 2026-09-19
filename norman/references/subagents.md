@@ -1,16 +1,19 @@
 # Norman Subagent Reference
 
-This file is read by the Haiku classifier during Step 3 of Mode 4 (Continue).
+This file is read by the support-tier classifier (`quick_model`) during Step 3 of Mode 4 (Continue).
 The orchestrator does NOT need this in its main context.
 
-**Source of truth:** Available agents live in `~/.claude/agents/` (the installed count drifts — regenerate the list with the command below rather than trusting any number written here). This file is a curated guide over that directory — if you add or remove an agent there, update the tables below. Haiku is instructed to verify the chosen `subagent_type` against the directory before returning a classification.
+**Source of truth:** Available agents live in the harness's agent directory — `~/.claude/agents/*.md` on Claude Code, `~/.codex/agents/*.toml` on Codex (the installed count drifts — regenerate the list with the command below rather than trusting any number written here). This file is a curated guide over that directory — if you add or remove an agent there, update the tables below. The classifier is instructed to verify the chosen `subagent_type` against the directory before returning a classification.
 
 To regenerate an authoritative list of installed agent names:
 ```
+# Claude Code
 for f in ~/.claude/agents/*.md; do grep -m1 "^name:" "$f" | sed 's/name: *//'; done | sort -u
+# Codex
+for f in ~/.codex/agents/*.toml; do grep -m1 '^name = ' "$f" | sed 's/name = "\(.*\)"/\1/'; done | sort -u
 ```
 
-**Built-in agents** (always available, not files): `general-purpose`, `Explore`, `Plan`, `claude`, `statusline-setup`, `claude-code-guide`.
+**Built-in agents** (always available, not files). Claude Code: `general-purpose`, `Explore`, `Plan`, `claude`, `statusline-setup`, `claude-code-guide`. Codex: `default`, `worker`, `explorer` — where this guide says `general-purpose`, Codex uses `default`.
 
 ---
 
@@ -24,7 +27,7 @@ Norman uses a three-tier advisor model:
 | **Worker** | `default_model` (sonnet) | Implements all tasks (never the advisor model) |
 | **Support** | `quick_model` (haiku) | Classifies tasks, gathers context, compresses progress |
 
-Workers stay on the worker model. The advisor handles quality control through plan review (Step 3.1) and code review (Step 6.2). This separation means the strongest model spends tokens on reasoning about approach and quality rather than writing boilerplate. Note: all agent files in `~/.claude/agents/` use `model: inherit` in their frontmatter, so norman's explicit model parameter on the Agent tool (or the session model, outside norman) determines what they run on.
+Workers stay on the worker model. The advisor handles quality control through plan review (Step 3.1) and code review (Step 6.2). This separation means the strongest model spends tokens on reasoning about approach and quality rather than writing boilerplate. Note: all agent files use `model: inherit` (no `model` key in the Codex TOML), so the model norman requests when spawning (or the session model, outside norman) determines what they run on.
 
 ---
 
@@ -124,7 +127,7 @@ Use when the task domain matters more than the language.
 | Use case | subagent_type |
 |----------|---------------|
 | No specialist match | `general-purpose` |
-| Context gathering / classification (Haiku) | `general-purpose` |
+| Context gathering / classification (support tier) | `general-purpose` |
 | Read-only codebase search | `Explore` |
 | Implementation planning | `Plan` |
 
@@ -134,7 +137,7 @@ Use when the task domain matters more than the language.
 
 ### Complexity Classification
 
-The classifier returns a `COMPLEXITY` level used to decide whether the Opus advisor reviews the task (in `auto` mode):
+The classifier returns a `COMPLEXITY` level used to decide whether the advisor reviews the task (in `auto` mode):
 
 Return **high** if ANY of these apply:
 - Task involves security (auth, encryption, tokens, permissions, input validation)
@@ -167,12 +170,12 @@ Pick the **most specific** agent that matches:
 6. If the task is documentation → documentation specialist
 7. If nothing fits well → `general-purpose`
 
-All workers run on Sonnet. The agent type determines the specialist prompt, not the model. The Opus advisor (Step 3.1, Step 6.2) handles complexity-based quality review separately — see Complexity Classification above.
+All workers run on the worker model (`default_model`). The agent type determines the specialist prompt, not the model. The advisor (Step 3.1, Step 6.2) handles complexity-based quality review separately — see Complexity Classification above.
 
 ### Verification Step (required)
 
 Before returning a classification, verify the chosen `subagent_type` exists:
 - It must be either a built-in (listed above), OR
-- An agent with that `name:` in `~/.claude/agents/` (run the regeneration command above if unsure)
+- An agent with that name in the harness's agent directory (run the regeneration command above if unsure)
 
 If the agent does not exist, fall back to `general-purpose` and note the missing agent in your `CONTEXT` field so the orchestrator can flag it.

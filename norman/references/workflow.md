@@ -1,6 +1,6 @@
 # Norman Workflow Execution Reference
 
-Read by the orchestrator when running Mode 4 (Continue) Steps 3-6 through the Workflow tool. Not needed when falling back to plain Agent calls.
+**Claude Code only.** Read by the orchestrator when running Mode 4 (Continue) Steps 3-6 through the Workflow tool. Not needed when falling back to plain subagent calls, and not applicable on harnesses without a Workflow tool (Codex) — those run the numbered steps in `continue.md` directly.
 
 ## Contract
 
