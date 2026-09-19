@@ -1,18 +1,22 @@
 # Norman
 
-Custom skills and agents for [Claude Code](https://claude.ai/code) that help with planning and executing software projects.
+Custom skills and agents for [Claude Code](https://claude.ai/code) and [OpenAI Codex](https://developers.openai.com/codex) that help with planning and executing software projects. The skills follow the open [Agent Skills](https://agentskills.io) format, so one copy serves both harnesses.
 
 ## What's in this repo
 
 ```
-norman/       # The norman skill (SKILL.md + subagents.md classifier guide + workflow.md execution reference)
+norman/       # The norman skill: SKILL.md router + references/ (one file per mode, classifier guide, workflow reference)
 prd/          # Thin shim skill that forwards to norman's PRD mode
-agents/       # Specialized subagent library (wshobson/agents + custom additions)
-statusline/   # Terminal status bar script
-Makefile      # Symlinks everything into ~/.claude/
+sweep/        # Post-implementation cleanup skill (mutation sweep, comment cleanup)
+agents/       # Specialized subagent library (wshobson/agents + custom additions), markdown source of truth
+tools/        # codex-agents: converts agents/*.md into Codex custom-agent TOML
+statusline/   # Terminal status bar script (Claude Code)
+Makefile      # Installs into ~/.claude/ (Claude Code) and ~/.agents/skills + ~/.codex/agents (Codex)
 ```
 
 ## Installation
+
+**Claude Code**
 
 ```bash
 make install     # symlink skills, agents, and statusline into ~/.claude/
@@ -21,6 +25,18 @@ make uninstall   # remove the symlinks (backups are left in place)
 ```
 
 Existing real files/dirs at the destinations are backed up to a timestamped folder under `~/.claude/` before linking.
+
+**Codex CLI**
+
+```bash
+make install-codex     # symlink skills into ~/.agents/skills/, generate ~/.codex/agents/*.toml
+make status-codex      # verify links and generated agent count
+make uninstall-codex   # remove the links and the generated TOML (hand-written agents are left alone)
+```
+
+Skills are discovered from `~/.agents/skills/` and invoked as `$norman`, `$sweep`, `$prd` (or implicitly by description). Agents are generated rather than linked because Codex reads TOML, not the markdown frontmatter format; `tools/codex-agents` does the conversion and needs a Go toolchain. Re-run `make install-codex` after editing anything in `agents/`.
+
+Both installs can coexist. `SKILL.md` files stay under Codex's 8 KB skill-body limit; everything longer lives in `references/` and is read on demand.
 
 ## The norman skill
 
@@ -71,13 +87,14 @@ Because all state is in files and every task ends in a git commit, you can kill 
 
 - Tests-first: workers must write a failing test for the acceptance criteria before implementing, and DONE reports without test evidence are rejected
 - Advisor gates: plan review before each task, code review after, failure diagnosis on errors (configurable via `advisor_mode`: always / auto / never)
-- Execution runs as a schema-validated Workflow pipeline (classify -> advise -> implement -> review) on harnesses that support it, with plain agent calls as the fallback
+- Execution runs as a schema-validated Workflow pipeline (classify -> advise -> implement -> review) on Claude Code, with plain subagent calls as the path on Codex
+- Harness differences (how to spawn, continue, or ask; where agents and instruction files live) are resolved by one table in `norman/SKILL.md`; the mode references are written harness-neutral
 - Parallel execution of independent tasks, with git worktree isolation when they might touch the same files
 - Patterns discovered during execution are logged to `progress.md`, fed to later subagents, and can be promoted to `CLAUDE.md`
 
 ## The agents library
 
-`agents/` is a pruned fork of the [wshobson/agents](https://github.com/wshobson/agents) collection (development-relevant agents only, all set to `model: inherit`) plus custom additions (`serverpod-expert`, `htmx-alpine-pro`). Norman's classifier picks the most specific agent for each task; `norman/subagents.md` is the curated guide it reads. All agents use `model: inherit`, so the agent type determines the specialist prompt while the caller (norman's worker model, or the session model outside norman) determines what it runs on.
+`agents/` is a pruned fork of the [wshobson/agents](https://github.com/wshobson/agents) collection (development-relevant agents only, all set to `model: inherit`) plus custom additions (`serverpod-expert`, `htmx-alpine-pro`). Norman's classifier picks the most specific agent for each task; `norman/references/subagents.md` is the curated guide it reads. All agents use `model: inherit`, so the agent type determines the specialist prompt while the caller (norman's worker model, or the session model outside norman) determines what it runs on.
 
 ## Statusline
 
@@ -109,7 +126,8 @@ See [statusline/README.md](statusline/README.md) for details.
 
 ## Requirements
 
-- [Claude Code](https://claude.ai/code) CLI
+- [Claude Code](https://claude.ai/code) CLI and/or [Codex CLI](https://developers.openai.com/codex)
+- Go 1.26+ (only for `make install-codex`)
 - `jq` (for the statusline)
 
 ## License
