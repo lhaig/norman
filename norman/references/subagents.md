@@ -59,10 +59,10 @@ Use when the task targets a specific framework or platform.
 | Framework / Platform | subagent_type |
 |----------------------|---------------|
 | Flutter / Dart | `flutter-expert` |
-| Frontend (React / responsive UI) | `frontend-developer` |
+| Frontend pages, layouts, forms, CSS, accessibility (htmx-style, server-rendered) | `frontend-developer` |
 | Godot 4 | `godot-developer` |
 | GraphQL APIs | `graphql-architect` |
-| htmx / Alpine.js frontends | `htmx-alpine-pro` |
+| htmx swap mechanics, triggers, OOB, Alpine scoping/init problems | `htmx-alpine-pro` |
 | iOS native | `ios-developer` |
 | Minecraft / Bukkit plugins | `minecraft-bukkit-pro` |
 | Mobile (React Native / cross-platform) | `mobile-developer` |
@@ -109,7 +109,6 @@ Use when the task domain matters more than the language.
 | AI feature engineering | `ai-engineer` |
 | Data engineering / pipelines | `data-engineer` |
 | Data science / analytics | `data-scientist` |
-| ML model training | `ml-engineer` |
 | MLOps | `mlops-engineer` |
 
 ### Documentation Specialists
