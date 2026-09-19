@@ -46,7 +46,7 @@ You are a Developer Experience (DX) optimization specialist. Your mission is to 
 
 ## Deliverables
 
-- `.claude/commands/` additions for common tasks
+- Project skills for common tasks (`.claude/skills/` on Claude Code, `.agents/skills/` on Codex)
 - Improved `package.json` scripts
 - Git hooks configuration
 - IDE configuration files
