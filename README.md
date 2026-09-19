@@ -8,7 +8,7 @@ Custom skills and agents for [Claude Code](https://claude.ai/code) and [OpenAI C
 norman/       # The norman skill: SKILL.md router + references/ (one file per mode, classifier guide, workflow reference)
 prd/          # Thin shim skill that forwards to norman's PRD mode
 sweep/        # Post-implementation cleanup skill (mutation sweep, comment cleanup)
-agents/       # Specialized subagent library (wshobson/agents + custom additions), markdown source of truth
+agents/       # Specialized subagent library, markdown source of truth
 tools/        # codex-agents: converts agents/*.md into Codex custom-agent TOML
 statusline/   # Terminal status bar script (Claude Code)
 Makefile      # Installs into ~/.claude/ (Claude Code) and ~/.agents/skills + ~/.codex/agents (Codex)
@@ -94,7 +94,7 @@ Because all state is in files and every task ends in a git commit, you can kill 
 
 ## The agents library
 
-`agents/` is a pruned fork of the [wshobson/agents](https://github.com/wshobson/agents) collection (development-relevant agents only, all set to `model: inherit`) plus custom additions (`serverpod-expert`, `htmx-alpine-pro`). Norman's classifier picks the most specific agent for each task; `norman/references/subagents.md` is the curated guide it reads. All agents use `model: inherit`, so the agent type determines the specialist prompt while the caller (norman's worker model, or the session model outside norman) determines what it runs on.
+`agents/` is a development-focused library of specialist agents, all set to `model: inherit`. Norman's classifier picks the most specific agent for each task; `norman/references/subagents.md` is the curated guide it reads. All agents use `model: inherit`, so the agent type determines the specialist prompt while the caller (norman's worker model, or the session model outside norman) determines what it runs on.
 
 ## Statusline
 
