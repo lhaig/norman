@@ -207,6 +207,36 @@ func TestInstallAndUninstallDir(t *testing.T) {
 	}
 }
 
+func TestInstallDirPrunesOrphans(t *testing.T) {
+	src := t.TempDir()
+	out := t.TempDir()
+	devnull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	defer devnull.Close()
+	write := func(dir, name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(src, "keep.md", "---\nname: keep\ndescription: d\n---\nbody\n")
+	// A generated file whose source agent has been deleted from the library.
+	write(out, "gone.toml", toTOML(Agent{Name: "gone", Description: "d", Body: "b"}))
+	// A hand-written file must survive regardless.
+	write(out, "mine.toml", "name = \"mine\"\ndescription = \"hand written\"\n")
+
+	if err := installDir(src, out, devnull, devnull); err != nil {
+		t.Fatalf("installDir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "gone.toml")); err == nil {
+		t.Error("orphaned generated gone.toml should have been pruned")
+	}
+	for _, want := range []string{"keep.toml", "mine.toml"} {
+		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
+			t.Errorf("%s should exist after install: %v", want, err)
+		}
+	}
+}
+
 func TestInstallDirEmptySource(t *testing.T) {
 	devnull, _ := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	defer devnull.Close()

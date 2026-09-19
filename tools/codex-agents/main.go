@@ -39,7 +39,9 @@ func main() {
 	}
 }
 
-// installDir converts every *.md agent in src into out/<name>.toml.
+// installDir converts every *.md agent in src into out/<name>.toml and
+// removes generated TOML whose source agent no longer exists, so deleting
+// an agent from the library also retires it from Codex on the next install.
 // Files without frontmatter (README.md) are skipped with a note.
 func installDir(src, out string, log, warn *os.File) error {
 	entries, err := filepath.Glob(filepath.Join(src, "*.md"))
@@ -53,6 +55,7 @@ func installDir(src, out string, log, warn *os.File) error {
 		return err
 	}
 	written := 0
+	fresh := map[string]bool{}
 	for _, path := range entries {
 		raw, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- path comes from globbing the operator-supplied -src directory
 		if err != nil {
@@ -71,10 +74,43 @@ func installDir(src, out string, log, warn *os.File) error {
 			return err
 		}
 		fmt.Fprintf(log, "[write] %s\n", dest)
+		fresh[dest] = true
 		written++
 	}
-	fmt.Fprintf(log, "Done. %d agents written to %s\n", written, out)
+	pruned, err := pruneOrphans(out, fresh, log)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(log, "Done. %d agents written to %s, %d orphaned removed\n", written, out, pruned)
 	return nil
+}
+
+// pruneOrphans removes generated TOML files in dir that this run did not
+// write. Hand-written files (no marker) are never touched.
+func pruneOrphans(dir string, fresh map[string]bool, log *os.File) (int, error) {
+	entries, err := filepath.Glob(filepath.Join(dir, "*.toml"))
+	if err != nil {
+		return 0, err
+	}
+	pruned := 0
+	for _, path := range entries {
+		if fresh[path] {
+			continue
+		}
+		gen, err := isGenerated(path)
+		if err != nil {
+			return pruned, err
+		}
+		if !gen {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			return pruned, err
+		}
+		fmt.Fprintf(log, "[prune] %s (source agent no longer exists)\n", path)
+		pruned++
+	}
+	return pruned, nil
 }
 
 // uninstallDir removes every *.toml in dir whose first line is the
