@@ -23,8 +23,8 @@ Detect it by a sibling `*_server/` package or a `serverpod_client` dependency in
 - **You handle**: Flutter UI, state management, navigation, integrating the generated client
 - **Delegate to the `serverpod-expert` subagent**: models, endpoints, database, migrations, server configuration
 - Use the generated client package for every call; never hand-roll HTTP against a Serverpod endpoint or hand-write a model that the server generates
-- Handle `ServerpodClientException` at the boundary and map it to user-facing state
-- After any server-side model or endpoint change, `serverpod generate` runs on the server before client work continues
+- Handle client exceptions at the boundary and map them to user-facing state: on Serverpod 4 `ServerpodClientException` is sealed, so catch `ServerpodClientNetworkException` (offline/unreachable) and `ServerpodClientHttpException` (server responded) separately
+- After any server-side model or endpoint change, the client is regenerated (`serverpod start` does it on save in 4.x; `serverpod generate` otherwise) before client work continues
 
 ```
 my_project/
