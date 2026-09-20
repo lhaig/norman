@@ -47,6 +47,7 @@ static/
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{block "title" .}}{{.AppName}}{{end}}</title>
   <link rel="stylesheet" href="/static/css/app.css?v={{.AssetVersion}}">
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"422","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <script src="/static/js/htmx.min.js?v={{.AssetVersion}}" defer></script>
   <script src="/static/js/alpine.min.js?v={{.AssetVersion}}" defer></script>
 </head>
@@ -73,7 +74,7 @@ static/
 
 - *List*: `<h1>` + primary action button, filter form (`hx-get` to the same route, `hx-trigger="change, keyup changed delay:300ms"`, `hx-target="#<resource>-list"`, `hx-push-url="true"`), the list partial, pagination partial. The list partial owns its empty state.
 - *Detail*: `<h1>`, metadata `<dl>`, sections in `<section aria-labelledby>`; any inline-editable section is its own target.
-- *Form*: the page wraps `partials/<resource>/form.html`. Submit with `hx-post`/`hx-put`, `hx-target="this"`, `hx-swap="outerHTML"`. Validation failure returns the same partial with `422`, field errors next to the inputs and a summary at the top. Success returns `HX-Redirect` (create) or the updated row plus an OOB flash (edit).
+- *Form*: the page wraps `partials/<resource>/form.html`. Submit with `hx-post`/`hx-put`, `hx-target="this"`, `hx-swap="outerHTML"`. Validation failure returns the same partial with `422`, field errors next to the inputs and a summary at the top — htmx does not swap 4xx by default, which is why the `htmx-config` meta in the base layout whitelists `422`; without it the form appears to do nothing. Success returns `HX-Redirect` (create) or the updated row plus an OOB flash (edit).
 - *Delete*: `hx-delete` with `hx-confirm` (or the modal for anything irreversible), `hx-target="closest tr"` / the row id, `hx-swap="delete"`, OOB flash in the response.
 
 **Fragment contract** — write this table for every feature before templates or handlers:
@@ -91,7 +92,7 @@ static/
 - `base.css`: reset, system font stack, headings, links, forms, tables, `:focus-visible` ring, `.skip-link`, `[x-cloak]{display:none}`, `.htmx-request` indicator rules
 - `components.css`: `.btn` (`--primary`, `--secondary`, `--danger`), `.field` (label, input, hint, error), `.card`, `.table`, `.flash`, `.modal`, `.empty-state`; one class per component, modifiers as `--suffix`, no utility soup
 
-**Every page must have**: one `<h1>`; a loading indicator on every htmx region; an empty state on every list; field-level errors plus a summary on every form; `htmx:responseError` handled once globally in `app.js` by rendering a flash, so a 500 never leaves the page silent.
+**Every page must have**: one `<h1>`; a loading indicator on every htmx region; an empty state on every list; field-level errors plus a summary on every form; `htmx:responseError` handled once globally in `app.js` by rendering a flash, so a 500 never leaves the page silent (only `422` swaps; every other 4xx/5xx reaches this handler).
 
 ## Approach
 1. Sketch the page as regions and decide which regions are htmx targets; give each a stable `id`

@@ -59,13 +59,13 @@ Norman runs on Claude Code and on OpenAI Codex. The references use harness-neutr
 
 | Concept | Claude Code | Codex CLI |
 |---------|-------------|-----------|
-| Spawning subagents | `Agent` tool with `subagent_type` and `model` | `spawn_agent` with `agent_type` set to the agent name, then `wait_agent`; if the role is missing, use `default` with the agent file's instructions in the prompt |
+| Spawning subagents | `Agent` tool with `subagent_type` and `model` | `spawn_agent` with `agent_type` set to the agent name and `reasoning_effort` set per tier (below), then `wait_agent`; if the role is missing, use `default` with the agent file's instructions in the prompt |
 | Continuing a subagent | `SendMessage` to the same agent | `followup_task` to the same agent |
 | Asking the user | `AskUserQuestion` with options | numbered options in plain text, wait for the reply |
 | Agent directory | `~/.claude/agents/*.md` | `~/.codex/agents/*.toml` |
 | Default agent | `general-purpose` | `default` |
 | Project instructions file | `CLAUDE.md`, global `~/.claude/CLAUDE.md` | `AGENTS.md`, global `~/.codex/AGENTS.md` |
-| Model tiers | `opus` / `sonnet` / `haiku` | session model with reasoning effort high / medium / low, unless `config.md` names Codex model ids |
+| Model tiers | `opus` / `sonnet` / `haiku` | `reasoning_effort` `high` (advisor) / `medium` (worker) / `low` (support) on every spawn — the session default is often `low`, so always pass it; add `model` only if `config.md` names Codex model ids |
 | Worktree isolation | `isolation: worktree` on spawn | subagents share the cwd — `git worktree add` a checkout and instruct the worker to run everything inside it, or serialize overlapping tasks |
 | Workflow pipeline | Workflow tool (see `workflow.md`) | not available — run the numbered steps directly |
 | Invoking the sweep skill | `Skill` tool | `$sweep` |
