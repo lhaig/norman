@@ -64,6 +64,11 @@ func parseAgent(src []byte) (Agent, error) {
 	return a, nil
 }
 
+// instructionsPreamble is prepended to every generated agent. Codex subagents
+// do not inherit AGENTS.md, so without this a spawned agent outside norman
+// would run with none of the user's or project's rules.
+const instructionsPreamble = "Before starting, read the project's AGENTS.md (repository root and the working directory, if present) and ~/.codex/AGENTS.md. Their rules override anything below.\n\n"
+
 // toTOML renders an Agent as a Codex custom agent file. `model: inherit`
 // (or no model) omits the key so Codex inherits the parent's model, which
 // is what norman relies on when it picks the tier at spawn time. Any other
@@ -80,7 +85,7 @@ func toTOML(a Agent) string {
 	}
 	b.WriteString("sandbox_mode = \"workspace-write\"\n")
 	b.WriteString("developer_instructions = \"\"\"\n")
-	b.WriteString(tomlMultiline(a.Body))
+	b.WriteString(tomlMultiline(instructionsPreamble + a.Body))
 	b.WriteString("\n\"\"\"\n")
 	return b.String()
 }

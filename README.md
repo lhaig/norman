@@ -34,7 +34,7 @@ make status-codex      # verify links and generated agent count
 make uninstall-codex   # remove the links and the generated TOML (hand-written agents are left alone)
 ```
 
-Skills are discovered from `~/.agents/skills/` and invoked as `$norman`, `$sweep`, `$prd` (or implicitly by description). Agents are generated rather than linked because Codex reads TOML, not the markdown frontmatter format; `tools/codex-agents` does the conversion and needs a Go toolchain. Re-run `make install-codex` after editing anything in `agents/`.
+Skills are discovered from `~/.agents/skills/` and invoked as `$norman`, `$sweep`, `$prd` (or implicitly by description). Agents are generated rather than linked because Codex reads TOML, not the markdown frontmatter format; `tools/codex-agents` does the conversion and needs a Go toolchain. Re-run `make install-codex` after editing anything in `agents/`. `~/.codex/AGENTS.md` is linked to `~/.claude/CLAUDE.md` so both harnesses read the same global rules; every generated agent is told to read `AGENTS.md` before starting, since Codex subagents do not inherit it.
 
 Both installs can coexist. `SKILL.md` files stay under Codex's 8 KB skill-body limit; everything longer lives in `references/` and is read on demand.
 

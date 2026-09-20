@@ -15,11 +15,14 @@ LINKS := \
 
 # Codex: skills are symlinked (Codex follows skill directory links); agents are
 # generated into ~/.codex/agents/ as TOML by tools/codex-agents, since Codex
-# does not read the markdown format.
+# does not read the markdown format. The global instructions file is shared
+# with Claude Code: Codex reads ~/.codex/AGENTS.md where Claude reads
+# ~/.claude/CLAUDE.md, and the content is the same set of rules.
 CODEX_LINKS := \
 	$(CODEX_SKILLS)/norman:$(REPO)/norman \
 	$(CODEX_SKILLS)/prd:$(REPO)/prd \
-	$(CODEX_SKILLS)/sweep:$(REPO)/sweep
+	$(CODEX_SKILLS)/sweep:$(REPO)/sweep \
+	$(CODEX_HOME)/AGENTS.md:$(CLAUDE_HOME)/CLAUDE.md
 
 .PHONY: install uninstall status install-codex uninstall-codex status-codex test help
 

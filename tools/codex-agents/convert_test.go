@@ -145,7 +145,7 @@ func TestBodyRoundTrip(t *testing.T) {
 			t.Fatalf("no developer_instructions in:\n%s", out)
 		}
 		enc := strings.TrimSuffix(out[i+len(open):], "\n\"\"\"\n")
-		if got := decodeMultiline(enc); got != body {
+		if got := decodeMultiline(enc); got != instructionsPreamble+body {
 			t.Errorf("round trip\n got %q\nwant %q", got, body)
 		}
 		if strings.Contains(enc, `"""`) {
@@ -192,6 +192,9 @@ func TestInstallAndUninstallDir(t *testing.T) {
 	}
 	if !strings.Contains(string(got), "You are a Go expert.") {
 		t.Errorf("body missing from generated TOML:\n%s", got)
+	}
+	if !strings.Contains(string(got), "read the project's AGENTS.md") {
+		t.Errorf("instructions preamble missing from generated TOML:\n%s", got)
 	}
 
 	if err := uninstallDir(out, devnull); err != nil {
