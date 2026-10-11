@@ -385,3 +385,234 @@ return { judged, critique }
 ```
 
 **After the workflow returns:** if `critique` is non-null, apply each gap by downgrading the matching `judged` entry's verdict (never upgrade). Then write `prds/verification.md` from the reconciled array and follow SKILL.md Mode 5 steps 5-6 (present, handle gaps). A `null` vote in a lens set (agent skipped or died) is simply dropped by `combine` — a requirement whose lenses all dropped is left `PARTIAL`.
+
+
+## Mode 10 (Security) as a workflow
+
+The orchestrator does steps 1-4 of `security.md` inline (context, PRD selection, area briefs, scope confirmation), then launches this script. The workflow never writes `prds/` or commits; the orchestrator writes the report and the fix phase from the returned object.
+
+**args shape:**
+
+```json
+{
+  "repo": "/abs/path/to/repo",
+  "product": "one sentence: what the app is and what sensitive data it holds",
+  "context": "- stack, deployment topology (proxy, client-IP handling), anything an auditor must know",
+  "priorReport": "prds/verification.md",
+  "routeFiles": "the files that hold the route tables",
+  "states": "account and object states that change access, e.g. suspended, hidden, blocked, deleted, unverified",
+  "maxPerPrd": 8,
+  "prds": ["prds/done/prd-auth.md", "..."],
+  "areas": [{ "key": "authz", "name": "Authorisation on owner-scoped routes", "brief": "tailored brief" }]
+}
+```
+
+Both tracks run under one `parallel` so neither waits on the other. Inside each track every PRD and every area is a `pipeline`, so a PRD's mutation agent starts as soon as its own verdicts are in. The two critics are the only barriers, because each needs the whole track.
+
+Agent count: about `prds x maxPerPrd x 3` verifiers, plus one extractor and one mutation agent per PRD, one auditor per area, three skeptics per finding, and two critics. 26 PRDs and 8 areas came to roughly 600-700 agents.
+
+```js
+export const meta = {
+  name: 'norman-secure',
+  description: 'Security check: norman verify (3 lenses + mutation + critic) over PRD security requirements, plus an 8-area threat review with adversarially verified findings',
+  phases: [
+    { title: 'Extract', detail: 'pull security/privacy requirements from each PRD', model: 'haiku' },
+    { title: 'Verify', detail: '3 lens verifiers per requirement' },
+    { title: 'Mutate', detail: 'break each PASS guarantee in a worktree; test must go red' },
+    { title: 'Audit', detail: '8 threat-led area auditors' },
+    { title: 'Confirm', detail: '3 skeptics per finding' },
+    { title: 'Critic', detail: 'completeness critics over both tracks' },
+  ],
+}
+
+const A = typeof args === 'string' ? JSON.parse(args) : args
+
+const RULES = `Ground rules for this review (non-negotiable):
+- Repository: ${A.repo}. Work READ-ONLY unless your instructions say otherwise. Never commit, never push, never edit anything under prds/.
+- Never contact production, never use production credentials or operator tokens, never read secrets.
+- Run tests narrowly (one package, one named test). Integration tests may start containers; avoid running whole suites.
+- Cite evidence as file:line, test names and command output. Do not assume; read the code.
+${A.context}
+${A.priorReport ? `- An earlier security review is summarised in ${A.priorReport}. Do not re-report a fixed item unless you show it has regressed.` : ''}`
+
+const REQS = {
+  type: 'object', required: ['requirements', 'omitted'],
+  properties: {
+    requirements: { type: 'array', items: { type: 'object', required: ['id', 'text', 'criteria'],
+      properties: { id: { type: 'string' }, text: { type: 'string' }, criteria: { type: 'string' } } } },
+    omitted: { type: 'integer' },
+  },
+}
+const VERDICT = {
+  type: 'object', required: ['verdict', 'evidence'],
+  properties: { verdict: { enum: ['PASS', 'FAIL', 'PARTIAL'] }, evidence: { type: 'string' },
+    testNames: { type: 'array', items: { type: 'string' } } },
+}
+const MUT = {
+  type: 'object', required: ['results'],
+  properties: { results: { type: 'array', items: { type: 'object', required: ['id', 'killed', 'detail'],
+    properties: { id: { type: 'string' }, killed: { type: 'boolean' }, detail: { type: 'string' } } } } },
+}
+const FINDINGS = {
+  type: 'object', required: ['findings', 'coverage'],
+  properties: {
+    findings: { type: 'array', items: { type: 'object', required: ['title', 'severity', 'file', 'scenario', 'evidence'],
+      properties: { title: { type: 'string' }, severity: { enum: ['HIGH', 'MEDIUM', 'LOW'] }, file: { type: 'string' },
+        line: { type: 'integer' }, scenario: { type: 'string' }, evidence: { type: 'string' } } } },
+    coverage: { type: 'string' },
+  },
+}
+const CONFIRM = {
+  type: 'object', required: ['confirmed', 'reason'],
+  properties: { confirmed: { type: 'boolean' }, reason: { type: 'string' }, severity: { enum: ['HIGH', 'MEDIUM', 'LOW'] } },
+}
+const GAPS = {
+  type: 'object', required: ['gaps'],
+  properties: { gaps: { type: 'array', items: { type: 'object', required: ['target', 'kind', 'reason'],
+    properties: { target: { type: 'string' }, kind: { enum: ['PARTIAL', 'FAIL', 'UNCOVERED'] }, reason: { type: 'string' } } } } },
+}
+
+const LENSES = [
+  { key: 'exists', ask: 'Does the implementation for this requirement actually exist and hold on EVERY code path that reaches it (all routes, the API, background jobs, imports)? Read the code; do not assume.' },
+  { key: 'tested', ask: 'Is there a test that exercises THIS requirement (not adjacent code) and asserts its criteria? Read the test, run it, and check whether it would still pass if the guarantee were broken (e.g. a negative test fed input that would be rejected anyway). Name the tests in testNames.' },
+  { key: 'edgecases', ask: 'Act as an attacker. Try to find an input, ordering, concurrent request, alternate route or state (${A.states}) that breaks this requirement. PASS only if you looked hard and found nothing.' },
+]
+
+const combine = (votes) => {
+  const v = votes.filter(Boolean)
+  const pass = v.filter((x) => x.verdict === 'PASS').length
+  const fail = v.filter((x) => x.verdict === 'FAIL').length
+  if (!v.length) return 'PARTIAL'
+  if (fail > pass) return 'FAIL'
+  if (pass > v.length / 2) return 'PASS'
+  return 'PARTIAL'
+}
+
+// ---------------- Track A: norman verify, adversarial ----------------
+const trackA = async () => {
+  const perPrd = await pipeline(A.prds,
+    (prd) => agent(`${RULES}
+
+Read ${prd} in full. Extract ONLY the requirements (user stories, functional and non-functional requirements, explicit constraints) that carry a SECURITY or PRIVACY guarantee: authentication, authorisation/ownership, visibility, blocks, rate limits, input validation, CSRF, encryption, secrets, data deletion/export/retention, consent, abuse prevention, what must never be published or exposed. Skip non-goals and pure UI/UX items.
+Keep at most ${A.maxPerPrd}, choosing the ones whose failure would hurt users most; set omitted to how many qualifying ones you left out.
+Ids: "${prd.replace(/^.*prd-/, '').replace(/\.md$/, '')}:<the PRD's own id, e.g. US-003 or FR-12>". criteria: the acceptance criteria verbatim or tightly paraphrased.`,
+      { model: 'haiku', phase: 'Extract', label: `extract:${prd.replace(/^.*prd-/, '')}`, schema: REQS }),
+    async (ex, prd) => {
+      if (!ex) return { prd, judged: [], omitted: 0 }
+      if (ex.omitted) log(`${prd}: ${ex.omitted} security requirements beyond the cap were not verified`)
+      const judged = await parallel(ex.requirements.map((req) => async () => {
+        const votes = await parallel(LENSES.map((lens) => () =>
+          agent(`${RULES}
+
+You are a norman verifier with one lens. ${lens.ask}
+
+PRD: ${prd}
+REQUIREMENT ${req.id}: ${req.text}
+ACCEPTANCE CRITERIA:
+${req.criteria}
+
+Return PASS, FAIL or PARTIAL with specific evidence. Keep evidence under 1200 characters.`,
+            { phase: 'Verify', label: `verify:${req.id}:${lens.key}`, schema: VERDICT })))
+        const tests = [...new Set(votes.filter(Boolean).flatMap((v) => v.testNames || []))]
+        return { id: req.id, text: req.text, verdict: combine(votes), tests,
+          evidence: votes.map((x, i) => x ? `[${LENSES[i].key} ${x.verdict}] ${x.evidence}` : `[${LENSES[i].key} -] no vote`).join('\n') }
+      }))
+      return { prd, judged: judged.filter(Boolean), omitted: ex.omitted }
+    },
+    async (res) => {
+      const passed = res.judged.filter((j) => j.verdict === 'PASS')
+      if (!passed.length) return res
+      const mut = await agent(`${RULES}
+EXCEPTION to read-only: you are running in your own git worktree; you MAY edit Go source temporarily, but you MUST restore every file (git checkout -- <file>) before you finish, and leave git status clean.
+
+Mutation sweep. For each requirement below, make the smallest edit to the implementation that breaks its guarantee (remove a check, widen a filter, skip an ownership test), run the named tests (or find the test that should guard it), record whether a test went red, then restore the file. One mutation at a time.
+
+${passed.map((p) => `- ${p.id}: ${p.text}\n  tests: ${p.tests.join(', ') || '(find them)'}`).join('\n')}
+
+killed=true means a test failed under the mutation. Put the mutation and the failing (or still-passing) test in detail, under 500 characters.`,
+        { phase: 'Mutate', label: `mutate:${res.prd.replace(/^.*prd-/, '')}`, schema: MUT, isolation: 'worktree' })
+      if (mut) for (const r of mut.results) {
+        const j = res.judged.find((x) => x.id === r.id)
+        if (!j) continue
+        j.mutation = r.detail
+        if (!r.killed) { j.verdict = 'PARTIAL'; j.evidence += `\n[mutation SURVIVED] ${r.detail}` }
+      }
+      return res
+    })
+
+  const all = perPrd.filter(Boolean).flatMap((p) => p.judged.map((j) => ({ prd: p.prd, ...j })))
+  const critique = await agent(`${RULES}
+
+You are the norman completeness critic. Per-requirement verdicts:
+${JSON.stringify(all.map((j) => ({ id: j.id, verdict: j.verdict, text: j.text, tests: j.tests })), null, 1)}
+
+Find what a per-requirement sweep structurally cannot: acceptance criteria no test exercises, requirements with no implementation, guarantees that hold on one route but whose sibling route (API vs HTML, htmx fragment vs full page, background job) was never checked. Spot-check the code for each gap you raise. Return only genuine gaps, kind PARTIAL or FAIL, target = the requirement id.`,
+    { phase: 'Critic', label: 'critic:requirements', schema: GAPS })
+  if (critique) for (const g of critique.gaps) {
+    const j = all.find((x) => x.id === g.target)
+    if (!j) continue
+    const rank = { PASS: 0, PARTIAL: 1, FAIL: 2 }
+    if (rank[g.kind] > rank[j.verdict]) j.verdict = g.kind
+    j.evidence += `\n[critic ${g.kind}] ${g.reason}`
+  }
+  return { requirements: all, omitted: perPrd.filter(Boolean).map((p) => ({ prd: p.prd, omitted: p.omitted })), critique }
+}
+
+// ---------------- Track B: threat-led review ----------------
+const SKEPTICS = [
+  { key: 'reproduce', ask: 'Try to REPRODUCE it: trace the exact request path in the code (or write a throwaway test in a scratch _test.go you delete afterwards) and show whether the bad outcome actually happens.' },
+  { key: 'reachable', ask: 'Check whether it is REACHABLE in the deployed setup: middleware order, auth gates, CSRF, rate limits, proxy/IP handling, body limits, feature flags. A finding that no real request can reach is not confirmed.' },
+  { key: 'mitigated', ask: 'Look for an existing MITIGATION elsewhere (a filter in a shared query, a later check, a DB constraint, a template guard). Confirm only if nothing already prevents it.' },
+]
+
+const trackB = async () => {
+  const perArea = await pipeline(A.areas,
+    (area) => agent(`${RULES}
+
+You are a security auditor for ${A.product}. Hunt for real, exploitable problems in this area:
+
+AREA: ${area.name}
+${area.brief}
+
+Report each finding with file and line, a concrete attack scenario (who, which request, what they gain), and evidence from the code. Severity: HIGH = another member's private data exposed/altered or account takeover; MEDIUM = meaningful abuse, DoS or weaker privacy; LOW = defence in depth. Do not report style issues, theoretical issues with no path, or anything an earlier review fixed unless it has regressed. In coverage, list what you examined (routes, files) so a critic can see what you skipped.`,
+      { agentType: 'security-auditor', phase: 'Audit', label: `audit:${area.key}`, schema: FINDINGS }),
+    async (res, area) => {
+      if (!res) return { area: area.key, findings: [], coverage: 'auditor failed' }
+      const judged = await parallel(res.findings.map((f) => async () => {
+        const votes = await parallel(SKEPTICS.map((s) => () =>
+          agent(`${RULES}
+
+You are a skeptic checking a claimed security finding. Default to confirmed=false if you cannot show it holds. ${s.ask}
+If you write a scratch test, delete it before you finish.
+
+FINDING (${f.severity}): ${f.title}
+File: ${f.file}${f.line ? ':' + f.line : ''}
+Scenario: ${f.scenario}
+Evidence: ${f.evidence}
+
+Return confirmed, a reason under 800 characters, and your own severity if confirmed.`,
+            { phase: 'Confirm', label: `confirm:${area.key}:${s.key}`, schema: CONFIRM })))
+        const v = votes.filter(Boolean)
+        const yes = v.filter((x) => x.confirmed)
+        return { ...f, confirmed: yes.length >= 2, votes: v.map((x, i) => `[${SKEPTICS[i] ? SKEPTICS[i].key : i} ${x.confirmed ? 'yes' : 'no'}] ${x.reason}`).join('\n'),
+          severityAfter: yes.length ? yes.map((x) => x.severity || f.severity).sort()[0] : f.severity }
+      }))
+      return { area: area.key, coverage: res.coverage, findings: judged.filter(Boolean) }
+    })
+
+  const areas = perArea.filter(Boolean)
+  const critique = await agent(`${RULES}
+
+You are the completeness critic for a threat-led review. What each auditor covered:
+${areas.map((a) => `## ${a.area}\n${a.coverage}\nconfirmed findings: ${a.findings.filter((f) => f.confirmed).map((f) => f.title).join('; ') || 'none'}`).join('\n\n')}
+
+List the routes, handlers, background jobs or data flows that hold user data but NO auditor examined (check ${A.routeFiles} against the coverage). Spot-check the most sensitive uncovered ones yourself; for anything you find exploitable, kind=FAIL with file:line in reason. Otherwise kind=UNCOVERED.`,
+    { phase: 'Critic', label: 'critic:threats', schema: GAPS })
+  return { areas, critique }
+}
+
+const [a, b] = await parallel([trackA, trackB])
+return { trackA: a, trackB: b }
+```
+
+**After the workflow returns:** `trackA.requirements` already has the critic's downgrades and surviving mutations folded in (never upgraded). `trackB.areas[].findings` carries `confirmed`, the skeptics' `votes` and `severityAfter`. Write `prds/verification.md` per `security.md` step 6, listing unconfirmed findings separately rather than dropping them, and continue with step 7.

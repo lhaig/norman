@@ -51,6 +51,7 @@ Executes projects with crash recovery and session persistence. The main agent or
 | `norman import [path]` | Review a PRD, move it to backlog, extract tasks |
 | `norman` / `continue norman` | Execute tasks via subagents until done or stopped |
 | `norman verify` | Validate the implementation against the PRD |
+| `norman secure` | In-depth security review of the whole project: security requirements verified with three lenses and mutation testing, plus a threat-led review whose findings are each checked by three skeptics |
 | `norman prune` | Collapse fully-done phases into the task archive |
 | `norman reset` | Clear execution state and start fresh |
 
@@ -61,6 +62,7 @@ norman prd        # create requirements (full lifecycle)
 norman import     # extract tasks
 continue norman   # execute
 norman verify     # validate
+norman secure     # in-depth security review before a launch or after a big phase
 
 norman plan       # or skip the PRD for smaller features
 continue norman

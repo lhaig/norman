@@ -1,6 +1,6 @@
 ---
 name: norman
-description: "Autonomous project execution with crash recovery. Triggers on: norman, start norman, continue norman, run the norman, set up project, resume project, norman plan, norman import, norman verify, norman upgrade, norman sweep, norman prd, create a prd, write prd for, plan this feature, requirements for, spec out."
+description: "Autonomous project execution with crash recovery. Triggers on: norman, start norman, continue norman, run the norman, set up project, resume project, norman plan, norman import, norman verify, norman secure, security review, norman upgrade, norman sweep, norman prd, create a prd, write prd for, plan this feature, requirements for, spec out."
 ---
 
 # Norman - Project Execution
@@ -20,6 +20,7 @@ This file is the router: it holds the architecture, the mode table, and the rule
 | 5 Verify | `norman verify` | `references/verify.md` |
 | 6 Prune / 7 Reset / 8 Upgrade | `norman prune|reset|upgrade` | `references/maintenance.md` |
 | 9 Sweep | `norman sweep`, or auto after a phase collapse | `references/sweep.md` |
+| 10 Security | `norman secure`, security review of the project | `references/security.md` |
 
 Also in `references/`: `state.md` (formats of every file under `prds/` — read before creating or editing one), `subagents.md` (agent classification guide, read by the classifier), `workflow.md` (Claude Code Workflow-tool pipeline, ignore on other harnesses).
 
@@ -35,7 +36,7 @@ prds/
   TASKS-archive.md   # Fully-DONE phases, collapsed out of TASKS.md
   config.md          # Session limits, project commands, model strategy
   progress.md        # Append-only execution log (crash recovery, patterns)
-  verification.md    # Output of norman verify
+  verification.md    # Output of norman verify and norman secure
   research/ backlog/ active/ done/   # PRD lifecycle folders
 ```
 
@@ -81,6 +82,7 @@ If `config.md` names a model the current harness does not offer, use the tier ma
 | `norman status` | Progress summary from TASKS.md |
 | `norman task [N]` / `skip [N]` / `add [desc]` / `pause` | Task control |
 | `norman verify` / `prune` / `sweep` / `upgrade` / `reset` | Validation and maintenance |
+| `norman secure` | In-depth security review: PRD security requirements verified with three lenses and mutation, plus a threat-led review with confirmed findings |
 | `norman learnings` | Review patterns in progress.md, promote to the project instructions file |
 
 ## Recovery
