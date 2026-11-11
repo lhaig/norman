@@ -161,3 +161,5 @@ Based on 2024 production incidents:
 5. **Cache Stampedes**: TTL and size limits causing thundering herds
 
 Remember: Configuration changes that "just change numbers" are often the most dangerous. A single wrong value can bring down an entire system. Be the guardian who prevents these outages.
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

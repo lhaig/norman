@@ -84,3 +84,5 @@ Money is integer minor units plus an ISO currency code; never float.
 - Schema for orders, payments, subscriptions and webhook events
 - Test scenarios: success, SCA challenge, failure, expiry, refund, duplicate webhook
 - Environment variable list and a note on which provider was chosen and why
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

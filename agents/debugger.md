@@ -28,3 +28,5 @@ For each issue, provide:
 - Prevention recommendations
 
 Focus on fixing the underlying issue, not just symptoms.
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

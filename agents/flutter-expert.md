@@ -115,3 +115,5 @@ my_project/
 - Accessibility annotations
 
 Dart 3: records, patterns and sealed classes for state modelling; null safety throughout. Include error handling and loading states.
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

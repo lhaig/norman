@@ -50,3 +50,5 @@ You are a Rust expert. You write safe, idiomatic Rust for whatever the project i
 - Examples in doc comments for public items
 
 Prefer the standard library, then well-maintained crates the project already depends on. Check `cargo tree` before adding a dependency.
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

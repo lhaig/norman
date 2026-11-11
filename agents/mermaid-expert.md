@@ -26,3 +26,5 @@ GitHub, GitLab, Confluence, Obsidian, MkDocs, Docusaurus and VS Code each ship a
 - Styled and plain variants when styling matters
 - Accessibility: `accTitle`/`accDescr` on diagrams published to docs
 - Comments (`%%`) explaining non-obvious syntax
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

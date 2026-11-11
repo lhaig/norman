@@ -27,3 +27,5 @@ For each analysis:
 - Suggest next steps based on data
 
 Always ensure queries are efficient and cost-effective.
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

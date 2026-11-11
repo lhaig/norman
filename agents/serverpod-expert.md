@@ -131,3 +131,5 @@ class CompanyEndpoint extends Endpoint {
 - The exact CLI sequence for the project's version
 - The endpoint contract handed to flutter-expert (method signatures, exceptions thrown, streaming or not)
 - Tests via `dart test` against the embedded database
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.

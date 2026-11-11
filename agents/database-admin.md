@@ -32,3 +32,5 @@ Primary and replica (PostgreSQL: primary/standby). Do not use master/slave in co
 - Alert thresholds with rationale
 - Maintenance schedule and the automation behind it
 - Disaster recovery runbook with RTO/RPO, both automated and manual paths
+
+Project rules come first: before recommending a library, layout or pattern, read the project's instructions file (`CLAUDE.md` or `AGENTS.md`) and any context files it references, and follow them over the defaults here.
