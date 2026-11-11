@@ -98,6 +98,8 @@ Because all state is in files and every task ends in a git commit, you can kill 
 
 `agents/` is a development-focused library of specialist agents, all set to `model: inherit`. Norman's classifier picks the most specific agent for each task; `norman/references/subagents.md` is the curated guide it reads. All agents use `model: inherit`, so the agent type determines the specialist prompt while the caller (norman's worker model, or the session model outside norman) determines what it runs on.
 
+To install only part of the library, list the agents to leave out in `~/.claude/norman-agents-exclude` (one name per line, `#` comments allowed; override the path with `AGENTS_EXCLUDE_FILE`) and re-run `make install` or `make install-codex`. `~/.claude/agents` then holds one symlink per installed agent instead of a link to the whole directory, and the Codex install skips the same names. Remove the file and re-run to go back to the full set. Norman's classifier falls back to the default agent when the one it picked is not installed.
+
 ## Statusline
 
 A status bar showing model, context usage, cost, project, and git branch:
